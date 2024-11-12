@@ -1,0 +1,20 @@
+# Ignore Python virtual environments
+.venv/
+__pycache__/
+*.pyc
+
+# Ignore logs and temporary files
+*.log
+*.tmp
+
+# Ignore datasets or data outputs
+data/
+processed_output/
+checkpoints/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
