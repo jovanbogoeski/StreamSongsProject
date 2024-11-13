@@ -9,9 +9,10 @@ services:
       - SPARK_MASTER_PORT=7077
       - SPARK_MASTER_WEBUI_PORT=8080
     ports:
-      - "8080:8080"    # Spark Web UI
-      - "7077:7077"    # Spark master port for worker connections
+      - "8080:8080"     # Spark Master Web UI
+      - "7077:7077"     # Spark Master Port
     networks:
+      - spark-net
       - kafka-net
 
   spark-worker:
@@ -22,23 +23,28 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_WEBUI_PORT=8081
     ports:
-      - "8081:8081"    # Worker Web UI
+      - "8081:8081"     # Spark Worker Web UI
     depends_on:
       - spark-master
     networks:
+      - spark-net
       - kafka-net
 
   spark-submit:
     image: bitnami/spark:latest
     container_name: spark-submit
-    entrypoint: [ "/bin/sh", "-c" ]
-    command: ["while true; do sleep 1000; done"] # Keeps the container running, for manual submissions
+    entrypoint: ["spark-submit"]
+    networks:
+      - spark-net
+      - kafka-net
     depends_on:
       - spark-master
-      - spark-worker
-    networks:
-      - kafka-net
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      # Set any additional environment variables needed here
 
 networks:
+  spark-net:
+    driver: bridge
   kafka-net:
-    external: true  # Use the existing kafka-net network
+    external: true
