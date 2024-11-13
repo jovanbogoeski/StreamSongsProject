@@ -1,30 +1,32 @@
 version: '3.8'
 
 services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-net
+
   kafka:
-    image: wurstmeister/kafka:latest
+    image: confluentinc/cp-kafka:latest
     container_name: kafka
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT://kafka:9092  # Update 'localhost' as needed
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'           # Enable automatic topic creation
-      KAFKA_BROKER_ID: 1                                # Unique broker ID
-      KAFKA_LOG_DIRS: /kafka/kafka-logs                 # Directory for Kafka logs
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092  # Expose Kafka on localhost for external access
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092  # Listen on all interfaces within the container
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL: PLAINTEXT
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
-      - "9092:9092"
+      - "9092:9092"  # Expose Kafka on port 9092 for external access
     depends_on:
       - zookeeper
-    networks:
-      - kafka-net
-    volumes:                                           # Optional: Mount logs outside container for persistence
-      - ./kafka-data:/kafka/kafka-logs
-
-  zookeeper:
-    image: wurstmeister/zookeeper:latest
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
     networks:
       - kafka-net
 

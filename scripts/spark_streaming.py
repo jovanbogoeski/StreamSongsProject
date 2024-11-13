@@ -3,13 +3,13 @@ from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType, TimestampType
 
 # Kafka and output configuration
-KAFKA_BROKER = 'kafka:9092'  # Kafka service name in Docker Compose
+KAFKA_BROKER = 'localhost:9092'
 KAFKA_TOPICS = ['auth_events', 'listen_events', 'page_view_events', 'status_change_events']
-OUTPUT_DIRECTORY = '/tmp/processed_output/'
 
 # Initialize Spark session
 spark = SparkSession.builder \
     .appName("KafkaSparkStreaming") \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.2.0") \
     .getOrCreate()
 
 # Define schemas based on your topics
@@ -24,7 +24,7 @@ auth_events_schema = StructType([
     StructField("userAgent", StringType(), True),
     StructField("lon", DoubleType(), True),
     StructField("lat", DoubleType(), True),
-    StructField("userId", DoubleType(), True),
+    StructField("userId", IntegerType(), True),
     StructField("lastName", StringType(), True),
     StructField("firstName", StringType(), True),
     StructField("gender", StringType(), True),
@@ -69,7 +69,7 @@ page_view_events_schema = StructType([
     StructField("userAgent", StringType(), True),
     StructField("lon", DoubleType(), True),
     StructField("lat", DoubleType(), True),
-    StructField("userId", DoubleType(), True),
+    StructField("userId", IntegerType(), True),
     StructField("lastName", StringType(), True),
     StructField("firstName", StringType(), True),
     StructField("gender", StringType(), True),
@@ -106,55 +106,36 @@ df = spark.readStream \
     .option("startingOffsets", "earliest") \
     .load()
 
-# Decode Kafka message values from JSON for each topic
-auth_df = df.filter(df.topic == "auth_events") \
-    .selectExpr("CAST(value AS STRING) as json") \
-    .select(from_json(col("json"), auth_events_schema).alias("data")) \
-    .select("data.*")
+# Helper function to parse each topic's JSON data
+def parse_topic(df, topic, schema):
+    return df.filter(col("topic") == topic) \
+             .selectExpr("CAST(value AS STRING) as json") \
+             .select(from_json(col("json"), schema).alias("data")) \
+             .select("data.*")
 
-listen_df = df.filter(df.topic == "listen_events") \
-    .selectExpr("CAST(value AS STRING) as json") \
-    .select(from_json(col("json"), listen_events_schema).alias("data")) \
-    .select("data.*")
-
-page_view_df = df.filter(df.topic == "page_view_events") \
-    .selectExpr("CAST(value AS STRING) as json") \
-    .select(from_json(col("json"), page_view_events_schema).alias("data")) \
-    .select("data.*")
-
-status_change_df = df.filter(df.topic == "status_change_events") \
-    .selectExpr("CAST(value AS STRING) as json") \
-    .select(from_json(col("json"), status_change_events_schema).alias("data")) \
-    .select("data.*")
+# Parse each topic with its schema
+auth_df = parse_topic(df, "auth_events", auth_events_schema)
+listen_df = parse_topic(df, "listen_events", listen_events_schema)
+page_view_df = parse_topic(df, "page_view_events", page_view_events_schema)
+status_change_df = parse_topic(df, "status_change_events", status_change_events_schema)
 
 # Write each DataFrame to Parquet files in streaming mode
-auth_query = auth_df.writeStream \
-    .format("parquet") \
-    .option("path", f"{OUTPUT_DIRECTORY}/auth_events") \
-    .option("checkpointLocation", f"{OUTPUT_DIRECTORY}/checkpoints/auth_events") \
-    .trigger(processingTime="1 minute") \
-    .start()
+def write_stream(df, path, checkpoint_path):
+    return df.writeStream \
+             .format("parquet") \
+             .option("path", path) \
+             .option("checkpointLocation", checkpoint_path) \
+             .trigger(processingTime="1 minute") \
+             .start()
 
-listen_query = listen_df.writeStream \
-    .format("parquet") \
-    .option("path", f"{OUTPUT_DIRECTORY}/listen_events") \
-    .option("checkpointLocation", f"{OUTPUT_DIRECTORY}/checkpoints/listen_events") \
-    .trigger(processingTime="1 minute") \
-    .start()
-
-page_view_query = page_view_df.writeStream \
-    .format("parquet") \
-    .option("path", f"{OUTPUT_DIRECTORY}/page_view_events") \
-    .option("checkpointLocation", f"{OUTPUT_DIRECTORY}/checkpoints/page_view_events") \
-    .trigger(processingTime="1 minute") \
-    .start()
-
-status_change_query = status_change_df.writeStream \
-    .format("parquet") \
-    .option("path", f"{OUTPUT_DIRECTORY}/status_change_events") \
-    .option("checkpointLocation", f"{OUTPUT_DIRECTORY}/checkpoints/status_change_events") \
-    .trigger(processingTime="1 minute") \
-    .start()
+auth_query = write_stream(auth_df, "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/auth_events", 
+                          "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/checkpoints/auth_events")
+listen_query = write_stream(listen_df, "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/listen_events", 
+                            "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/checkpoints/listen_events")
+page_view_query = write_stream(page_view_df, "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/page_view_events", 
+                               "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/checkpoints/page_view_events")
+status_change_query = write_stream(status_change_df, "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/status_change_events", 
+                                   "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/checkpoints/status_change_events")
 
 # Await termination of all streams
 auth_query.awaitTermination()

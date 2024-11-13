@@ -9,10 +9,9 @@ services:
       - SPARK_MASTER_PORT=7077
       - SPARK_MASTER_WEBUI_PORT=8080
     ports:
-      - "8080:8080"     # Spark Master Web UI
-      - "7077:7077"     # Spark Master Port
+      - "8080:8080"  # Spark Master Web UI
+      - "7077:7077"  # Spark Master Port
     networks:
-      - spark-net
       - kafka-net
 
   spark-worker:
@@ -23,31 +22,12 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_WEBUI_PORT=8081
     ports:
-      - "8081:8081"     # Spark Worker Web UI
+      - "8081:8081"  # Spark Worker Web UI
     depends_on:
       - spark-master
     networks:
-      - spark-net
       - kafka-net
-
-  spark-submit:
-    image: bitnami/spark:latest
-    container_name: spark-submit
-    entrypoint: ["spark-submit"]
-    environment:
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      # Set additional environment variables here if needed
-    networks:
-      - spark-net
-      - kafka-net
-    depends_on:
-      - spark-master
-    # Optional: mount a folder for submitting scripts or data
-    volumes:
-      - ./path_to_your_scripts:/scripts
 
 networks:
-  spark-net:
-    driver: bridge
   kafka-net:
-    external: true
+    driver: bridge
