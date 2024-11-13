@@ -7,8 +7,8 @@ services:
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT://kafka:9092  # Internal and external access
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'           # Enable automatic topic creation if needed
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT://kafka:9092  # Update 'localhost' as needed
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'           # Enable automatic topic creation
       KAFKA_BROKER_ID: 1                                # Unique broker ID
       KAFKA_LOG_DIRS: /kafka/kafka-logs                 # Directory for Kafka logs
     ports:
@@ -17,6 +17,8 @@ services:
       - zookeeper
     networks:
       - kafka-net
+    volumes:                                           # Optional: Mount logs outside container for persistence
+      - ./kafka-data:/kafka/kafka-logs
 
   zookeeper:
     image: wurstmeister/zookeeper:latest
