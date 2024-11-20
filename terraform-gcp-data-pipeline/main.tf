@@ -1,40 +1,50 @@
-# Provider Configuration
 provider "google" {
   project = var.project_id
   region  = var.region
   zone    = var.zone
 }
 
-# Networking
+# VPC Network
 resource "google_compute_network" "vpc_network" {
-  name = var.vpc_name
+  name = "data-pipeline-vpc"
+}
 
-  lifecycle {
-    prevent_destroy = true
-  }
+# Subnetwork
+variable "subnet_cidr" {
+  description = "CIDR range for the subnet"
+  default     = "10.0.0.0/16"
 }
 
 resource "google_compute_subnetwork" "subnet" {
-  name          = var.subnet_name
+  name          = "data-pipeline-subnet"
   ip_cidr_range = var.subnet_cidr
   region        = var.region
   network       = google_compute_network.vpc_network.id
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "google_compute_firewall" "firewall" {
+# Firewall Rules
+resource "google_compute_firewall" "allow_internal" {
   name    = "allow-internal"
   network = google_compute_network.vpc_network.name
 
   allow {
     protocol = "tcp"
-    ports    = var.allowed_ports
+    ports    = ["22", "7077", "8080", "9092"]  # SSH, Spark Master, Airflow UI, Kafka
   }
 
-  source_ranges = ["0.0.0.0/0"]
+  source_ranges = ["10.0.0.0/16"]
+}
+
+resource "google_compute_firewall" "allow_ssh_external" {
+  name    = "allow-ssh-external"
+  network = google_compute_network.vpc_network.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["<your-external-ip>/32"]  # Replace with your IP
 }
 
 # Service Accounts
@@ -48,31 +58,19 @@ resource "google_service_account" "spark_sa" {
   display_name = "Spark Service Account"
 }
 
-resource "google_service_account" "airflow_sa" {
-  account_id   = "airflow-service-account"
-  display_name = "Airflow Service Account"
-}
-
-# IAM Roles for Service Accounts
 resource "google_project_iam_member" "kafka_storage_access" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
   member  = "serviceAccount:${google_service_account.kafka_sa.email}"
 }
 
-resource "google_project_iam_member" "spark_bigquery_access" {
+resource "google_project_iam_member" "spark_storage_access" {
   project = var.project_id
-  role    = "roles/bigquery.dataEditor"
+  role    = "roles/storage.objectAdmin"
   member  = "serviceAccount:${google_service_account.spark_sa.email}"
 }
 
-resource "google_project_iam_member" "airflow_storage_access" {
-  project = var.project_id
-  role    = "roles/storage.objectViewer"
-  member  = "serviceAccount:${google_service_account.airflow_sa.email}"
-}
-
-# Kafka Instance
+# Compute Instances
 resource "google_compute_instance" "kafka" {
   name         = "kafka-instance"
   machine_type = var.kafka_machine_type
@@ -91,15 +89,9 @@ resource "google_compute_instance" "kafka" {
     subnetwork = google_compute_subnetwork.subnet.name
     access_config {}
   }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
   metadata_startup_script = file("kafka-startup.sh")
 }
 
-# Spark Instance
 resource "google_compute_instance" "spark" {
   name         = "spark-instance"
   machine_type = var.spark_machine_type
@@ -118,42 +110,10 @@ resource "google_compute_instance" "spark" {
     subnetwork = google_compute_subnetwork.subnet.name
     access_config {}
   }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
   metadata_startup_script = file("spark-startup.sh")
 }
 
-# Airflow Instance
-resource "google_compute_instance" "airflow" {
-  name         = "airflow-instance"
-  machine_type = var.airflow_machine_type
-  zone         = var.zone
-  service_account {
-    email  = google_service_account.airflow_sa.email
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-  }
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-10"
-    }
-  }
-  network_interface {
-    network    = google_compute_network.vpc_network.id
-    subnetwork = google_compute_subnetwork.subnet.name
-    access_config {}
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  metadata_startup_script = file("airflow-startup.sh")
-}
-
-# Google Cloud Storage Bucket for Data
+# Google Cloud Storage Bucket
 resource "random_id" "bucket_suffix" {
   byte_length = 4
 }
@@ -168,21 +128,13 @@ resource "google_storage_bucket" "data_bucket" {
       type = "Delete"
     }
     condition {
-      age = 30  # Objects older than 30 days will be deleted
+      age = 30  # Deletes objects older than 30 days
     }
-  }
-
-  lifecycle {
-    prevent_destroy = true
   }
 }
 
 # BigQuery Dataset
 resource "google_bigquery_dataset" "data_pipeline_dataset" {
-  dataset_id = var.bigquery_dataset_id
+  dataset_id = "streaming_data_${var.environment}"
   location   = var.bigquery_location
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
