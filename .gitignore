@@ -8,10 +8,13 @@ __pycache__/
 *.tmp
 
 # Ignore datasets or data outputs
-processed_output/
+
 checkpoints/
 tables/
 data_analysis_scripts/
+data/converted_file.csv
+data/fake.json
+
 
 # Ignore system files
 .DS_Store
