@@ -7,18 +7,22 @@ __pycache__/
 *.log
 *.tmp
 
-# Ignore datasets or data outputs
-
-checkpoints/
+# Ignore checkpoints and tables
+.ipynb_checkpoints/
 tables/
-data_analysis_scripts/
-data/converted_file.csv
-data/fake.json
 
+# Ignore scripts or analysis files
+data_analysis_scripts/
+
+# Ignore processed outputs and dimensions
+processed_dimension/
+processed_fact/
+processed_output/
+
+#Ignore test_notebooks
+test_notebooks/
+test_dimensions/
 
 # Ignore system files
 .DS_Store
 Thumbs.db
-
-# Ignore Jupyter notebook checkpoints
-.ipynb_checkpoints/

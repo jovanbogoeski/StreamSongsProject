@@ -21,7 +21,7 @@ Eventsim uses song data from [Million Songs Dataset](http://millionsongdataset.c
 - Containerization - [**Docker**](https://www.docker.com), [**Docker Compose**](https://docs.docker.com/compose/)
 - Stream Processing - [**Kafka**](https://kafka.apache.org), [**Spark Streaming**](https://spark.apache.org/docs/latest/streaming-programming-guide.html)
 - Orchestration - [**Airflow**](https://airflow.apache.org)
-- Transformation - [**dbt**](https://www.getdbt.com)
+- Transformation - [**dbt or pyspark**](https://www.getdbt.com)
 - Data Lake - [**Google Cloud Storage**](https://cloud.google.com/storage)
 - Data Warehouse - [**BigQuery**](https://cloud.google.com/bigquery)
 - Data Visualization - [**Power BI**](https://datastudio.google.com/overview)
