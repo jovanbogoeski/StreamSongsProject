@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, min as spark_min, max as spark_max, row_number, from_unixtime
+from pyspark.sql.functions import col, min as spark_min, max as spark_max, row_number, from_unixtime, year, month
 from pyspark.sql.window import Window
 
 if __name__ == "__main__":
@@ -9,8 +9,8 @@ if __name__ == "__main__":
     spark = SparkSession.builder.appName("Simplified Session Dimension ETL").getOrCreate()
 
     # Paths
-    base_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/listen_events"
-    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_dimension/dim_session"
+    base_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_topics/listen_events"
+    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_session"
 
     # Read the existing Parquet file
     try:
@@ -49,16 +49,19 @@ if __name__ == "__main__":
         col("EndTime")
     )
 
+    # Add year and month columns for partitioning
+    dim_session_partitioned = dim_session_with_id.withColumn("year", year(col("StartTime"))).withColumn("month", month(col("StartTime")))
+
     # Show the output and schema on terminal
     print("Simplified Session Dimension Sample Output:")
-    dim_session_with_id.show(10, truncate=False)
-    dim_session_with_id.printSchema()
+    dim_session_partitioned.show(10, truncate=False)
+    dim_session_partitioned.printSchema()
 
-    # Save the Session Dimension
-    print(f"Saving Simplified Session Dimension to {output_path}...")
+    # Save the Session Dimension with partitioning by year and month
+    print(f"Saving Simplified Session Dimension to {output_path} with partitioning...")
     try:
-        dim_session_with_id.write.mode("overwrite").parquet(output_path)
-        print(f"Simplified Session Dimension table saved to {output_path}")
+        dim_session_partitioned.write.mode("overwrite").partitionBy("year", "month").parquet(output_path)
+        print(f"Simplified Session Dimension table saved to {output_path} with partitioning by year and month.")
     except Exception as e:
         print(f"Error saving the simplified session dimension: {e}")
         exit(1)

@@ -1,18 +1,19 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, lag, lit, sum as spark_sum, when, rank, min as spark_min, lead, to_date
+    col, lag, lit, sum as spark_sum, when, rank, min as spark_min, lead, to_date, monotonically_increasing_id
 )
 from pyspark.sql.window import Window
 import os
 
 if __name__ == "__main__":
-    print("Starting User Dimension ETL (SCD2)...")
+    print("Starting User Dimension ETL (SCD2 with Surrogate Key)...")
     
     # Initialize SparkSession
     spark = SparkSession.builder.appName("User Dimension SCD2").getOrCreate()
 
     # Path to processed output
     base_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_output/listen_events"
+    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_dimension/dim_user_surogate"
 
     # Validate input path
     if not os.path.exists(base_path):
@@ -33,7 +34,9 @@ if __name__ == "__main__":
         to_date((col("registration") / 1000).cast("timestamp")).alias("registration_date"),
         col("level").alias("subscription_level"),
         col("ts").cast("timestamp").alias("event_date")
-    ).filter(col("user_id").isNotNull())
+    ).filter(col("user_id").isNotNull()).dropDuplicates()
+
+    print(f"Rows processed: {listen_events.count()}")
 
     # Lag to detect subscription level changes
     window_user = Window.partitionBy("user_id").orderBy("event_date")
@@ -69,8 +72,23 @@ if __name__ == "__main__":
     ).withColumn(
         "current_row",
         when(col("valid_to") == lit("9999-12-31").cast("date"), lit(1)).otherwise(lit(0))
-    ).select(
-        "user_id",
+    )
+
+    # Deduplicate rows before assigning surrogate key
+    user_dimension = user_dimension.dropDuplicates(
+        ["user_id", "valid_from", "valid_to", "subscription_level"]
+    )
+
+    # Add surrogate key using monotonically_increasing_id
+    user_dimension = user_dimension.withColumn(
+        "user_key",
+        monotonically_increasing_id()
+    )
+
+    # Select final columns
+    user_dimension = user_dimension.select(
+        "user_key",               # Surrogate key
+        "user_id",                # Original business key
         "first_name",
         "last_name",
         "gender",
@@ -81,12 +99,29 @@ if __name__ == "__main__":
         "current_row"
     )
 
-    # Save the final user dimension table
-    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_dimension/dim_user"
-    user_dimension.write.mode("overwrite").parquet(output_path)
+    # Partition output by current_row for query optimization
+    user_dimension.write.mode("overwrite").partitionBy("current_row").parquet(output_path)
+    print(f"User dimension table with surrogate key saved to {output_path}")
 
-    print(f"User dimension table saved to {output_path}")
-    
+    # Validation: Unique users in dimension table
+    unique_users = user_dimension.select("user_id").distinct().count()
+    print(f"Unique users in dimension table: {unique_users}")
+
+    # Validation: Total rows in dimension table
+    total_rows = user_dimension.count()
+    print(f"Total rows in dimension table: {total_rows}")
+
+    # Validation: Check for users with multiple current rows
+    current_rows_check = user_dimension.filter(col("current_row") == 1).groupBy("user_id").count()
+    incorrect_current_rows = current_rows_check.filter(col("count") > 1).count()
+    print(f"Users with multiple current rows: {incorrect_current_rows}")
+
+    # Validation: Check for missing user IDs
+    missing_users = listen_events.select("user_id").distinct().subtract(
+        user_dimension.select("user_id").distinct()
+    )
+    print(f"Missing user IDs in dimension table: {missing_users.count()}")
+
     # Stop SparkSession
     spark.stop()
     print("User Dimension ETL Completed.")

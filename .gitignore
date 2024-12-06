@@ -15,13 +15,11 @@ tables/
 data_analysis_scripts/
 
 # Ignore processed outputs and dimensions
-processed_dimension/
-processed_fact/
-processed_output/
+processed_topics/
+fact_table/
+dimension_resul/
+test_dimension_scd/
 
-#Ignore test_notebooks
-test_notebooks/
-test_dimensions/
 
 # Ignore system files
 .DS_Store

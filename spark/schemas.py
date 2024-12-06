@@ -6,7 +6,7 @@ auth_events_schema = StructType([
     StructField("level", StringType(), True),        # object (string)
     StructField("itemInSession", IntegerType(), True),  # int64
     StructField("city", StringType(), True),         # object (string)
-    StructField("zip", LongType(), True),            # int64
+    StructField("zip", StringType(), True),            # int64
     StructField("state", StringType(), True),        # object (string)
     StructField("userAgent", StringType(), True),    # object (string)
     StructField("lon", DoubleType(), True),          # float64
@@ -29,7 +29,7 @@ listen_events_schema = StructType([
     StructField("level", StringType(), True),           # object (string)
     StructField("itemInSession", IntegerType(), True),     # int64
     StructField("city", StringType(), True),            # object (string)
-    StructField("zip", LongType(), True),               # int64
+    StructField("zip", StringType(), True),               # int64
     StructField("state", StringType(), True),           # object (string)
     StructField("userAgent", StringType(), True),       # object (string)
     StructField("lon", DoubleType(), True),             # float64
@@ -52,7 +52,7 @@ page_view_events_schema = StructType([
     StructField("level", StringType(), True),           # object (string)
     StructField("itemInSession", LongType(), True),     # int64
     StructField("city", StringType(), True),            # object (string)
-    StructField("zip", LongType(), True),               # int64
+    StructField("zip", StringType(), True),               # int64
     StructField("state", StringType(), True),           # object (string)
     StructField("userAgent", StringType(), True),       # object (string)
     StructField("lon", DoubleType(), True),             # float64
@@ -61,7 +61,7 @@ page_view_events_schema = StructType([
     StructField("lastName", StringType(), True),        # object (string)
     StructField("firstName", StringType(), True),       # object (string)
     StructField("gender", StringType(), True),          # object (string)
-    StructField("registration", DoubleType(), True),    # float64
+    StructField("registration", LongType(), True),    # float64
     StructField("artist", StringType(), True),          # object (string)
     StructField("song", StringType(), True),            # object (string)
     StructField("duration", DoubleType(), True)         # float64
@@ -74,7 +74,7 @@ status_change_events_schema = StructType([
     StructField("level", StringType(), True),           # object (string)
     StructField("itemInSession", IntegerType(), True),     # int64
     StructField("city", StringType(), True),            # object (string)
-    StructField("zip", LongType(), True),               # int64
+    StructField("zip", StringType(), True),               # int64
     StructField("state", StringType(), True),           # object (string)
     StructField("userAgent", StringType(), True),       # object (string)
     StructField("lon", DoubleType(), True),             # float64

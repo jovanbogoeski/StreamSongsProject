@@ -7,14 +7,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def initialize_spark(app_name="SparkApplication"):
+def initialize_spark(app_name="SparkApplication", master="yarn"):
     """
-    Initializes and returns a Spark session.
+    Initializes and returns a Spark session configured for YARN.
     """
     return SparkSession.builder \
         .appName(app_name) \
+        .master(master) \
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.2.0") \
-        .config("spark.sql.adaptive.enabled", "false") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:8020") \
         .getOrCreate()
 
 def read_from_kafka(spark, kafka_broker, topics):
