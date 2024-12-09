@@ -1,69 +1,70 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col, year, month, dayofmonth, dayofweek, hour, minute, second, from_unixtime, row_number
-)
-from pyspark.sql.window import Window
+from pyspark.sql.functions import col, expr
+from datetime import datetime
 
 if __name__ == "__main__":
-    print("Starting Date-Time Dimension ETL...")
+    print("Starting Date Dimension ETL for 2021...")
 
     # Initialize SparkSession
-    spark = SparkSession.builder.appName("Date-Time Dimension ETL").getOrCreate()
+    spark = SparkSession.builder.appName("Date Dimension ETL").getOrCreate()
 
     # Paths
-    base_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_topics/listen_events"
-    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime"
+    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021"
 
-    # Read the existing Parquet file
-    try:
-        listen_events = spark.read.parquet(base_path)
-        print("Successfully loaded the listen_events dataset.")
-    except Exception as e:
-        print(f"Error reading Parquet file: {e}")
-        exit(1)
+    # Step 1: Define the date range for 2021
+    startdate = datetime.strptime("2021-01-01", "%Y-%m-%d")
+    enddate = datetime.strptime("2021-12-31", "%Y-%m-%d")
 
-    # Validate timestamps and extract unique timestamps
-    listen_events = listen_events.filter(col("ts").isNotNull() & (col("ts") > 0))
-
-    dim_datetime = listen_events.select(
-        from_unixtime(col("ts") / 1000).alias("timestamp")  # Convert ts (BIGINT) to TIMESTAMP
-    ).distinct()
-
-    # Add date and time components
-    dim_datetime_with_components = dim_datetime.withColumn("date", col("timestamp").cast("date")) \
-        .withColumn("year", year(col("timestamp"))) \
-        .withColumn("month", month(col("timestamp"))) \
-        .withColumn("day", dayofmonth(col("timestamp"))) \
-        .withColumn("day_of_week", dayofweek(col("timestamp"))) \
-        .withColumn("is_weekend", (col("day_of_week") >= 6).cast("boolean")) \
-        .withColumn("hour", hour(col("timestamp"))) \
-        .withColumn("minute", minute(col("timestamp"))) \
-        .withColumn("second", second(col("timestamp")))
-
-    # Add a sequential surrogate key (`datetime_id`) using `row_number()` ordered by `timestamp`
-    window_spec = Window.orderBy("timestamp")
-    dim_datetime_with_id = dim_datetime_with_components.withColumn(
-        "datetime_id", row_number().over(window_spec)
+    # Step 2: Define column names and transformation rules
+    column_rule_df = spark.createDataFrame(
+        [
+            ("DateSK", "cast(date_format(date, 'yyyyMMdd') as int)"),  # 20210101
+            ("Year", "year(date)"),  # 2021
+            ("Quarter", "quarter(date)"),  # 1
+            ("Month", "month(date)"),  # 1
+            ("Day", "day(date)"),  # 1
+            ("Week", "weekofyear(date)"),  # 1
+            ("QuarterNameLong", "date_format(date, 'QQQQ')"),  # 1st quarter
+            ("QuarterNameShort", "date_format(date, 'QQQ')"),  # Q1
+            ("QuarterNumberString", "date_format(date, 'QQ')"),  # 01
+            ("MonthNameLong", "date_format(date, 'MMMM')"),  # January
+            ("MonthNameShort", "date_format(date, 'MMM')"),  # Jan
+            ("MonthNumberString", "date_format(date, 'MM')"),  # 01
+            ("DayNumberString", "date_format(date, 'dd')"),  # 01
+            ("WeekNameLong", "concat('week', lpad(weekofyear(date), 2, '0'))"),  # week 01
+            ("WeekNameShort", "concat('w', lpad(weekofyear(date), 2, '0'))"),  # w01
+            ("WeekNumberString", "lpad(weekofyear(date), 2, '0')"),  # 01
+            ("DayOfWeek", "dayofweek(date)"),  # 1
+            ("YearMonthString", "date_format(date, 'yyyy/MM')"),  # 2021/01
+            ("DayOfWeekNameLong", "date_format(date, 'EEEE')"),  # Sunday
+            ("DayOfWeekNameShort", "date_format(date, 'EEE')"),  # Sun
+            ("DayOfMonth", "cast(date_format(date, 'd') as int)"),  # 1
+            ("DayOfYear", "cast(date_format(date, 'D') as int)"),  # 1
+        ],
+        ["new_column_name", "expression"],
     )
 
-    # Reorder columns for clarity
-    dim_datetime_final = dim_datetime_with_id.select(
-        "datetime_id", "timestamp", "date", "year", "month", "day", "day_of_week", 
-        "hour", "minute", "second", "is_weekend"
+    # Step 3: Generate a range of dates for 2021
+    start = int(startdate.timestamp())
+    stop = int(enddate.timestamp())
+    df_ref_date = spark.range(start, stop + 60 * 60 * 24, 60 * 60 * 24).select(
+        col("id").cast("timestamp").cast("date").alias("Date")
     )
 
-    # Show the output on terminal
-    print("Date-Time Dimension Sample Output:")
-    dim_datetime_final.show(10, truncate=False)
+    # Step 4: Apply transformation rules to add columns
+    for row in column_rule_df.collect():
+        new_column_name = row["new_column_name"]
+        expression = expr(row["expression"])
+        df_ref_date = df_ref_date.withColumn(new_column_name, expression)
 
-    # Save the Date-Time Dimension with partitioning by year, month, and day
+    # Step 5: Save the result to Parquet
     try:
-        dim_datetime_final.write.mode("overwrite").partitionBy("year", "month", "day").parquet(output_path)
-        print(f"Date-Time dimension table saved to {output_path}")
+        df_ref_date.write.mode("overwrite").partitionBy("Year", "Month").parquet(output_path)
+        print(f"Date dimension for 2021 saved successfully to {output_path}")
     except Exception as e:
-        print(f"Error saving the date-time dimension: {e}")
+        print(f"Error saving date dimension for 2021: {e}")
         exit(1)
 
     # Stop SparkSession
     spark.stop()
-    print("Date-Time Dimension ETL Completed.")
+    print("Date Dimension ETL for 2021 completed.")

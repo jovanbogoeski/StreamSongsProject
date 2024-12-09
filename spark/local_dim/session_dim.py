@@ -1,12 +1,19 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, min as spark_min, max as spark_max, row_number, from_unixtime, year, month
+from pyspark.sql.functions import col, min as spark_min, max as spark_max, row_number, from_unixtime, year, month, lit, current_date
 from pyspark.sql.window import Window
+from pyspark.sql.types import IntegerType
 
 if __name__ == "__main__":
-    print("Starting Simplified Session Dimension ETL...")
+    print("Starting SCD2 Session Dimension ETL...")
 
     # Initialize SparkSession
-    spark = SparkSession.builder.appName("Simplified Session Dimension ETL").getOrCreate()
+    spark = SparkSession.builder \
+        .appName("SCD2 Session Dimension ETL") \
+        .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "4g") \
+        .config("spark.executor.cores", "2") \
+        .config("spark.sql.shuffle.partitions", "200") \
+        .getOrCreate()
 
     # Paths
     base_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/processed_topics/listen_events"
@@ -29,7 +36,7 @@ if __name__ == "__main__":
 
     # Calculate start and end times for each session and convert epoch to datetime
     print("Calculating session start and end times...")
-    session_time_window = listen_events.groupBy("sessionId").agg(
+    incoming_data = listen_events.groupBy("sessionId").agg(
         spark_min(col("ts")).alias("StartTime"),  # Minimum timestamp for session start
         spark_max(col("ts")).alias("EndTime")    # Maximum timestamp for session end
     ).withColumn(
@@ -38,34 +45,68 @@ if __name__ == "__main__":
         "EndTime", from_unixtime(col("EndTime") / 1000).cast("timestamp")
     )
 
-    # Add a sequential surrogate key for session_id using row_number()
-    print("Generating surrogate keys for session_id...")
-    window_spec = Window.orderBy("StartTime", "sessionId")  # Tie-breaker for consistent order
-    dim_session_with_id = session_time_window.withColumn(
-        "session_id", row_number().over(window_spec)
-    ).select(
-        "session_id",
-        col("StartTime"),
-        col("EndTime")
+    # Add SCD2 fields
+    incoming_data = incoming_data.withColumn("start_date", lit(current_date())) \
+                                 .withColumn("end_date", lit(None).cast("date")) \
+                                 .withColumn("is_active", lit(True))
+
+    # Read the existing Session Dimension
+    try:
+        existing_dim_session = spark.read.parquet(output_path)
+        print("Successfully loaded the existing Session Dimension.")
+    except Exception:
+        print("No existing Session Dimension found. Initializing a new table.")
+        existing_dim_session = spark.createDataFrame([], incoming_data.schema.add("session_id", IntegerType()))
+
+    # Detect updated records (changes in StartTime or EndTime)
+    print("Detecting updated sessions...")
+    updates = existing_dim_session.join(
+        incoming_data,
+        on="sessionId",
+        how="inner"
+    ).filter(
+        (existing_dim_session["StartTime"] != incoming_data["StartTime"]) |
+        (existing_dim_session["EndTime"] != incoming_data["EndTime"])
+    ).select(existing_dim_session["*"])
+
+    # Mark old records as inactive
+    updates = updates.withColumn("is_active", lit(False)).withColumn("end_date", lit(current_date()))
+
+    # Detect new records (not in existing Session Dimension)
+    print("Detecting new sessions...")
+    new_records = incoming_data.join(
+        existing_dim_session.select("sessionId"),
+        on="sessionId",
+        how="left_anti"
     )
 
+    # Generate surrogate keys for new records
+    print("Generating surrogate keys for new records...")
+    window_spec = Window.orderBy("StartTime", "sessionId")
+    new_records = new_records.withColumn(
+        "session_id",
+        row_number().over(window_spec) + existing_dim_session.count()
+    )
+
+    # Combine active, updated (inactive), and new records
+    print("Combining active, updated, and new records...")
+    unchanged_records = existing_dim_session.filter("is_active = TRUE").join(
+        incoming_data.select("sessionId"), on="sessionId", how="left_anti"
+    )
+    final_dim_session = unchanged_records.union(updates).union(new_records)
+
     # Add year and month columns for partitioning
-    dim_session_partitioned = dim_session_with_id.withColumn("year", year(col("StartTime"))).withColumn("month", month(col("StartTime")))
+    final_dim_session = final_dim_session.withColumn("year", year(col("StartTime"))).withColumn("month", month(col("StartTime")))
 
-    # Show the output and schema on terminal
-    print("Simplified Session Dimension Sample Output:")
-    dim_session_partitioned.show(10, truncate=False)
-    dim_session_partitioned.printSchema()
-
-    # Save the Session Dimension with partitioning by year and month
-    print(f"Saving Simplified Session Dimension to {output_path} with partitioning...")
+    # Save the SCD2 Session Dimension
+    print(f"Saving SCD2 Session Dimension to {output_path} with partitioning...")
     try:
-        dim_session_partitioned.write.mode("overwrite").partitionBy("year", "month").parquet(output_path)
-        print(f"Simplified Session Dimension table saved to {output_path} with partitioning by year and month.")
+        final_dim_session.write.mode("overwrite").partitionBy("year", "month").parquet(output_path)
+        print(f"SCD2 Session Dimension table saved to {output_path} with partitioning by year and month.")
     except Exception as e:
-        print(f"Error saving the simplified session dimension: {e}")
+        print(f"Error saving the SCD2 session dimension: {e}")
         exit(1)
 
     # Stop SparkSession
     spark.stop()
-    print("Simplified Session Dimension ETL Completed.")
+    print("SCD2 Session Dimension ETL Completed.")
