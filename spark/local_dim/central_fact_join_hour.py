@@ -1,17 +1,16 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, from_unixtime
-from pyspark.sql.functions import col, lit, from_unixtime, to_date
+from pyspark.sql.functions import col, lit, from_unixtime, to_date, hour
 
 if __name__ == "__main__":
-    print("Starting Central Fact Table ETL...")
+    print("Starting Central Fact Table ETL with Hour...")
 
     # Initialize SparkSession
     spark = (
         SparkSession.builder
         .appName("Central Fact Table ETL")
-        .config("spark.executor.memory", "4g")  # Executor memory
-        .config("spark.executor.cores", "2")  # Number of cores per executor
-        .config("spark.driver.memory", "2g")  # Memory for the driver node
+        .config("spark.executor.memory", "4g")
+        .config("spark.executor.cores", "2")
+        .config("spark.driver.memory", "2g")
         .getOrCreate()
     )
 
@@ -20,10 +19,10 @@ if __name__ == "__main__":
     dim_song_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_song"
     dim_artist_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_artist"
     dim_city_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_city"
-    dim_datetime_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021"
+    dim_datetime_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021_hourly"
     dim_user_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_skuser_fact"
     dim_session_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_session"
-    fact_output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/fact_table_no_hour"
+    fact_output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/fact_table_with_hour_val"
 
     # Read the listen_events fact data
     listen_events = spark.read.parquet(listen_events_path)
@@ -36,8 +35,9 @@ if __name__ == "__main__":
     dim_user = spark.read.parquet(dim_user_path)
     dim_session = spark.read.parquet(dim_session_path)
 
-    #Preprocess fact table to extract event date
+    # Preprocess fact table to extract event date and hour
     listen_events = listen_events.withColumn("event_date", to_date(from_unixtime(col("ts") / 1000)))
+    listen_events = listen_events.withColumn("event_hour", hour(from_unixtime(col("ts") / 1000)))
 
     # Step 1: Enrich the fact data with surrogate keys
 
@@ -75,10 +75,11 @@ if __name__ == "__main__":
         fact_table["*"], dim_city["city_id"]
     )
 
-    # Join with Date-Time Dimension
+    # Join with Date-Time Dimension (Include Hour)
     fact_table = fact_table.join(
         dim_datetime,
-        to_date(from_unixtime(fact_table["ts"] / 1000)) == dim_datetime["Date"],
+        (to_date(from_unixtime(fact_table["ts"] / 1000)) == dim_datetime["Date"]) &
+        (hour(from_unixtime(fact_table["ts"] / 1000)) == dim_datetime["Hour"]),
         "left"
     ).select(
         fact_table["*"], dim_datetime["DateSK"].alias("datetime_id")
@@ -102,7 +103,7 @@ if __name__ == "__main__":
         fact_table["*"], dim_session["session_id"].alias("session_id_fk")
     )
 
-    # Step 2: Select Final Columns for the Fact Table
+    # Step 2: Select Final Columns for the Fact Table, Including 'duration'
     fact_table_final = fact_table.select(
         "userKey",
         "song_id",
@@ -112,17 +113,30 @@ if __name__ == "__main__":
         "session_id_fk",
         "level",
         "ts",
+        "duration",  # Include the duration column for validation purposes
         lit(1).alias("plays_count")  # Example: Add a plays_count metric for aggregation
     )
 
     # Step 3: Save the Central Fact Table
     try:
         fact_table_final.write.mode("overwrite").parquet(fact_output_path)
-        print(f"Central Fact Table saved to {fact_output_path}")
+        print(f"Central Fact Table with Hour saved to {fact_output_path}")
     except Exception as e:
-        print(f"Error saving Central Fact Table: {e}")
+        print(f"Error saving Central Fact Table with Hour: {e}")
         exit(1)
+
+    # Validation: Compare Duration Sums
+    # Sum of durations in listen_events
+    listen_events_duration_sum = listen_events.agg({"duration": "sum"}).collect()[0][0]
+
+    # Sum of durations in fact_table_final
+    fact_table_duration_sum = fact_table_final.agg({"duration": "sum"}).collect()[0][0]
+
+    # Print Validation Results
+    print("Validation Results:")
+    print(f"Sum of Duration in listen_events: {listen_events_duration_sum}")
+    print(f"Sum of Duration in Fact Table: {fact_table_duration_sum}")
 
     # Stop SparkSession
     spark.stop()
-    print("Central Fact Table ETL Completed.")
+    print("Central Fact Table ETL with Hour Completed.")

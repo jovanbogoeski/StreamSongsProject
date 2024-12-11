@@ -1,28 +1,29 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, expr
-from datetime import datetime
+from pyspark.sql.functions import col, expr, date_format
+from datetime import datetime, timedelta
 
 if __name__ == "__main__":
-    print("Starting Date Dimension ETL for 2021...")
+    print("Starting Date Dimension ETL for 2021 with Hourly Granularity...")
 
     # Initialize SparkSession
     spark = SparkSession.builder.appName("Date Dimension ETL").getOrCreate()
 
     # Paths
-    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021"
+    output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021_hourly"
 
     # Step 1: Define the date range for 2021
-    startdate = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    enddate = datetime.strptime("2021-12-31", "%Y-%m-%d")
+    startdate = datetime.strptime("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+    enddate = datetime.strptime("2021-12-31 23:00:00", "%Y-%m-%d %H:%M:%S")
 
     # Step 2: Define column names and transformation rules
     column_rule_df = spark.createDataFrame(
         [
-            ("DateSK", "cast(date_format(date, 'yyyyMMdd') as int)"),  # 20210101
+            ("DateSK", "cast(date_format(date, 'yyyyMMddHH') as long)"),  # 2021010100
             ("Year", "year(date)"),  # 2021
             ("Quarter", "quarter(date)"),  # 1
             ("Month", "month(date)"),  # 1
             ("Day", "day(date)"),  # 1
+            ("Hour", "hour(date)"),  # 0
             ("Week", "weekofyear(date)"),  # 1
             ("QuarterNameLong", "date_format(date, 'QQQQ')"),  # 1st quarter
             ("QuarterNameShort", "date_format(date, 'QQQ')"),  # Q1
@@ -44,11 +45,11 @@ if __name__ == "__main__":
         ["new_column_name", "expression"],
     )
 
-    # Step 3: Generate a range of dates for 2021
+    # Step 3: Generate a range of timestamps for 2021 with hourly granularity
     start = int(startdate.timestamp())
-    stop = int(enddate.timestamp())
-    df_ref_date = spark.range(start, stop + 60 * 60 * 24, 60 * 60 * 24).select(
-        col("id").cast("timestamp").cast("date").alias("Date")
+    stop = int(enddate.timestamp()) + 3600  # Include the final hour
+    df_ref_date = spark.range(start, stop, 3600).select(
+        col("id").cast("timestamp").alias("date")
     )
 
     # Step 4: Apply transformation rules to add columns
@@ -59,12 +60,12 @@ if __name__ == "__main__":
 
     # Step 5: Save the result to Parquet
     try:
-        df_ref_date.write.mode("overwrite").partitionBy("Year", "Month").parquet(output_path)
-        print(f"Date dimension for 2021 saved successfully to {output_path}")
+        df_ref_date.write.mode("overwrite").partitionBy("Year", "Month", "Day").parquet(output_path)
+        print(f"Date dimension for 2021 with hourly granularity saved successfully to {output_path}")
     except Exception as e:
-        print(f"Error saving date dimension for 2021: {e}")
+        print(f"Error saving date dimension for 2021 with hourly granularity: {e}")
         exit(1)
 
     # Stop SparkSession
     spark.stop()
-    print("Date Dimension ETL for 2021 completed.")
+    print("Date Dimension ETL for 2021 with Hourly Granularity completed.")
