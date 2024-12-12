@@ -74,15 +74,8 @@ if __name__ == "__main__":
     # Step 9: Deduplicate the final fact table (to ensure unique userId rows)
     user_fact_table = user_fact_table.dropDuplicates(["userId"])
 
-    # Step 10: Generate a surrogate key
-    user_fact_table = user_fact_table.withColumn(
-        "userKey",
-        col("userId").cast("string") + lit("-") + col("rowActivationDate").cast("string") + lit("-") + col("level")
-    )
-
-    # Step 11: Select final columns for the fact table
+    # Step 10: Select final columns for the fact table
     user_fact_table = user_fact_table.select(
-        "userKey",
         "userId",
         "firstName",
         "lastName",
@@ -94,7 +87,7 @@ if __name__ == "__main__":
         "currentRow"
     )
 
-    # Step 12: Save the final fact table
+    # Step 11: Save the final fact table
     user_fact_table.write.mode("overwrite").parquet(output_path)
     print(f"Final User Dimension Fact Table Saved to {output_path}")
 

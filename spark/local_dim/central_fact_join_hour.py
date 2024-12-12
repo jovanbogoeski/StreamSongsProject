@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, from_unixtime, to_date, hour
+from pyspark.sql.functions import col, lit, from_unixtime, to_date, hour, date_trunc
 
 if __name__ == "__main__":
     print("Starting Central Fact Table ETL with Hour...")
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     dim_datetime_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_datetime_2021_hourly"
     dim_user_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_skuser_fact"
     dim_session_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/dimension_resul/dim_session"
-    fact_output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/fact_table_with_hour_val"
+    fact_output_path = "/mnt/c/Users/Jovan Bogoevski/StreamsSongs/fact_table_with_hour"
 
     # Read the listen_events fact data
     listen_events = spark.read.parquet(listen_events_path)
@@ -35,9 +35,10 @@ if __name__ == "__main__":
     dim_user = spark.read.parquet(dim_user_path)
     dim_session = spark.read.parquet(dim_session_path)
 
-    # Preprocess fact table to extract event date and hour
-    listen_events = listen_events.withColumn("event_date", to_date(from_unixtime(col("ts") / 1000)))
-    listen_events = listen_events.withColumn("event_hour", hour(from_unixtime(col("ts") / 1000)))
+    # Preprocess fact table to extract event datetime
+    listen_events = listen_events.withColumn(
+        "event_datetime", date_trunc("hour", from_unixtime(col("ts") / 1000))
+    )
 
     # Step 1: Enrich the fact data with surrogate keys
 
@@ -75,23 +76,22 @@ if __name__ == "__main__":
         fact_table["*"], dim_city["city_id"]
     )
 
-    # Join with Date-Time Dimension (Include Hour)
+    # Join with Date-Time Dimension
     fact_table = fact_table.join(
         dim_datetime,
-        (to_date(from_unixtime(fact_table["ts"] / 1000)) == dim_datetime["Date"]) &
-        (hour(from_unixtime(fact_table["ts"] / 1000)) == dim_datetime["Hour"]),
+        fact_table["event_datetime"] == dim_datetime["Date"],
         "left"
     ).select(
         fact_table["*"], dim_datetime["DateSK"].alias("datetime_id")
     )
 
-    # Join with User Dimension
+    # Join with User Dimension (using userId directly)
     fact_table = fact_table.join(
         dim_user,
         fact_table["userId"] == dim_user["userId"],
         "left"
     ).select(
-        fact_table["*"], dim_user["userKey"]
+        fact_table["*"], dim_user["userId"].alias("user_id_fk")
     )
 
     # Join with Session Dimension
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     # Step 2: Select Final Columns for the Fact Table, Including 'duration'
     fact_table_final = fact_table.select(
-        "userKey",
+        "user_id_fk",
         "song_id",
         "artist_id",
         "city_id",
