@@ -1,0 +1,3 @@
+v1
+{"path":"file:///mnt/c/Users/Jovan%20Bogoevski/StreamsSongs/processed_topics/status_change_events/part-00000-4d31ef87-f420-4202-9870-0551d8d1c53e-c000.snappy.parquet","size":1578,"isDir":false,"modificationTime":1733067442749,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///mnt/c/Users/Jovan%20Bogoevski/StreamsSongs/processed_topics/status_change_events/part-00001-993d9d6b-82a2-4c22-b2ac-b4bc0206c03b-c000.snappy.parquet","size":36922,"isDir":false,"modificationTime":1733067422281,"blockReplication":1,"blockSize":33554432,"action":"add"}
