@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, from_unixtime, to_date, hour, date_trunc
+from pyspark.sql.functions import col, lit, from_unixtime, to_date, hour
 
 if __name__ == "__main__":
     print("Starting Central Fact Table ETL with Hour...")
@@ -35,10 +35,13 @@ if __name__ == "__main__":
     dim_user = spark.read.parquet(dim_user_path)
     dim_session = spark.read.parquet(dim_session_path)
 
-    # Preprocess fact table to extract event datetime
-    listen_events = listen_events.withColumn(
-        "event_datetime", date_trunc("hour", from_unixtime(col("ts") / 1000))
-    )
+    # Preprocess fact table to extract event date and hour
+    listen_events = listen_events.withColumn("event_date", to_date(from_unixtime(col("ts") / 1000)))
+    listen_events = listen_events.withColumn("event_hour", hour(from_unixtime(col("ts") / 1000)).cast("int"))
+
+    # Ensure dim_datetime columns are properly cast
+    dim_datetime = dim_datetime.withColumn("Date", col("Date").cast("date"))
+    dim_datetime = dim_datetime.withColumn("Hour", col("Hour").cast("int"))
 
     # Step 1: Enrich the fact data with surrogate keys
 
@@ -76,10 +79,11 @@ if __name__ == "__main__":
         fact_table["*"], dim_city["city_id"]
     )
 
-    # Join with Date-Time Dimension
+    # Join with Date-Time Dimension (Include Hour)
     fact_table = fact_table.join(
         dim_datetime,
-        fact_table["event_datetime"] == dim_datetime["Date"],
+        (fact_table["event_date"] == dim_datetime["Date"]) &
+        (fact_table["event_hour"] == dim_datetime["Hour"]),
         "left"
     ).select(
         fact_table["*"], dim_datetime["DateSK"].alias("datetime_id")
